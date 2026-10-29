@@ -1,69 +1,139 @@
-import Image from "next/image";
+import Link from "next/link"
+import { Suspense } from "react"
+import { requestNow } from "@/lib/time"
+import { BattleCardView, DiscussionCardView } from "@/components/cards"
+import { PageFallback } from "@/components/ui"
+import { VotePanel } from "@/components/vote-panel"
+import { industryLabel } from "@/lib/constants"
+import { getCurrentUser } from "@/lib/current"
+import { formatWhen } from "@/lib/format"
+import { getHome } from "@/lib/present"
 
-export default function Home() {
+export default function HomePage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <Suspense fallback={<PageFallback title="Your fandom. Your rules. Your wars." />}>
+      <Home />
+    </Suspense>
+  )
+}
+
+async function Home() {
+  const user = await getCurrentUser()
+  const now = await requestNow()
+  const data = await getHome(user?.id ?? null, now)
+  const site = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "Crazy Fans",
+    description: "A community for Indian cinema fans to debate, vote, and be heard.",
+    url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:2700",
+  }
+
+  return (
+    <div>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(site).replace(/</g, "\\u003c") }} />
+      {user?.status === "suspended" ? (
+        <p className="wrap mt-6 border border-gold/40 bg-gold/10 px-4 py-3 text-sm" role="status">
+          Your account is suspended. You can read. Posting, voting, and reactions are paused.
+        </p>
+      ) : null}
+      {data.featured ? (
+        <section className="border-b border-line">
+          <div className="wrap grid items-start gap-10 py-12 lg:grid-cols-[1.15fr_0.85fr] lg:py-16">
+            <div>
+              <p className="kicker">Featured war</p>
+              <h1 className="mt-3 max-w-3xl font-serif text-5xl leading-[0.95] tracking-tight text-balance md:text-7xl">
+                {data.featured.title}
+              </h1>
+              <p className="mt-5 max-w-xl text-lg leading-8 text-muted">{data.featured.prompt}</p>
+              <p className="mt-6 text-sm text-muted">
+                Asked by{" "}
+                <Link href={`/members/${data.featured.author.username}`} className="font-semibold text-paper hover:text-gold">
+                  {data.featured.author.displayName}
+                </Link>
+                {" · "}
+                {industryLabel(data.featured.industry)}
+                {" · "}
+                {formatWhen(data.featured.createdAt, now)}
+              </p>
+            </div>
+            <VotePanel battle={data.featured} canVote={user?.status === "active"} returnTo="/" />
+          </div>
+        </section>
+      ) : (
+        <section className="wrap py-16">
+          <h1 className="font-serif text-5xl">The room is quiet.</h1>
+          <p className="mt-3 text-muted">Open the first battle when you are ready.</p>
+        </section>
+      )}
+
+      <section className="wrap grid gap-12 py-12 lg:grid-cols-[1.1fr_0.9fr]">
+        <div>
+          <div className="flex items-end justify-between gap-4">
+            <h2 className="font-serif text-3xl tracking-tight">Trending arguments</h2>
+            <Link href="/discussions" className="text-sm font-semibold text-gold">All discussions</Link>
+          </div>
+          <div className="mt-5 space-y-4">
+            {data.trending.map((item, index) => (
+              <div key={item.id} className="grid grid-cols-[auto_1fr] gap-4">
+                <span className="font-serif text-3xl text-gold">{String(index + 1).padStart(2, "0")}</span>
+                <DiscussionCardView item={item} now={now} />
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className="space-y-8">
+          {data.weekly ? (
+            <section className="panel p-5">
+              <p className="kicker">Weekly prompt</p>
+              <h2 className="mt-3 font-serif text-3xl tracking-tight">
+                <Link href={`/discussions/${data.weekly.slug}`} className="hover:text-gold">{data.weekly.title}</Link>
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-muted">{data.weekly.excerpt}</p>
+            </section>
+          ) : null}
+          <section>
+            <div className="flex items-end justify-between gap-4">
+              <h2 className="font-serif text-3xl tracking-tight">More wars</h2>
+              <Link href="/battles" className="text-sm font-semibold text-gold">All battles</Link>
+            </div>
+            <div className="mt-5 space-y-4">
+              {data.battles.map((item) => (
+                <BattleCardView key={item.id} item={item} now={now} />
+              ))}
+            </div>
+          </section>
         </div>
-      </main>
+      </section>
+
+      <section className="border-t border-line">
+        <div className="wrap grid gap-8 py-12 md:grid-cols-3">
+          <div>
+            <p className="kicker">01</p>
+            <h2 className="mt-2 font-serif text-2xl">Discover a fight worth having</h2>
+            <p className="mt-2 text-sm leading-6 text-muted">A featured battle, a weekly prompt, and the arguments people are actually answering.</p>
+          </div>
+          <div>
+            <p className="kicker">02</p>
+            <h2 className="mt-2 font-serif text-2xl">Take a side, then defend it</h2>
+            <p className="mt-2 text-sm leading-6 text-muted">One vote per battle. You can move it when someone earns the change.</p>
+          </div>
+          <div>
+            <p className="kicker">03</p>
+            <h2 className="mt-2 font-serif text-2xl">Come back when someone replies</h2>
+            <p className="mt-2 text-sm leading-6 text-muted">Recognition is a reply to your post, not a streak that punishes a quiet day.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="wrap pb-4">
+        <h2 className="font-serif text-3xl tracking-tight">Fresh voices</h2>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          {data.fresh.map((item) => (
+            <DiscussionCardView key={item.id} item={item} now={now} />
+          ))}
+        </div>
+      </section>
     </div>
-  );
+  )
 }

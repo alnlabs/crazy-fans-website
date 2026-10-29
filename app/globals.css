@@ -1,26 +1,116 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-fraunces), Georgia, "Times New Roman", serif;
+  --color-ink: #110e0c;
+  --color-panel: #1c1814;
+  --color-paper: #f4efe6;
+  --color-muted: #c8bfb2;
+  --color-line: rgba(244, 239, 230, 0.16);
+  --color-crimson: #c43228;
+  --color-gold: #e2b15a;
+  --color-teal: #2f9d8a;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100dvh;
+  background-color: var(--color-ink);
+  background-image:
+    radial-gradient(900px 420px at 0% -10%, rgba(196, 50, 40, 0.24), transparent 55%),
+    radial-gradient(760px 380px at 100% 0%, rgba(226, 177, 90, 0.12), transparent 46%);
+  color: var(--color-paper);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: #e2b15a;
+  color: #110e0c;
+}
+
+:focus-visible {
+  outline: 2px solid #e2b15a;
+  outline-offset: 3px;
+}
+
+.wrap {
+  width: min(1120px, calc(100% - 2rem));
+  margin-inline: auto;
+}
+
+.kicker {
+  color: var(--color-gold);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ticket-mark {
+  position: relative;
+  display: inline-block;
+  width: 1.05rem;
+  height: 1.3rem;
+  border-radius: 2px;
+  background: var(--color-crimson);
+}
+
+.ticket-mark::before,
+.ticket-mark::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--color-ink);
+  transform: translateY(-50%);
+}
+
+.ticket-mark::before {
+  left: -0.2rem;
+}
+
+.ticket-mark::after {
+  right: -0.2rem;
+}
+
+.panel {
+  border: 1px solid var(--color-line);
+  background: rgba(28, 24, 20, 0.88);
+}
+
+summary {
+  list-style: none;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+.legal h2 {
+  margin-top: 2rem;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1.6rem;
+  letter-spacing: -0.03em;
+}
+
+.legal p,
+.legal li {
+  color: var(--color-muted);
+  line-height: 1.7;
+}
+
+.legal ul {
+  margin-top: 0.75rem;
+  padding-left: 1.2rem;
+  list-style: disc;
 }
