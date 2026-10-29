@@ -1,13 +1,21 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { runtimeDataDir } from "@/lib/data-dir"
 import { buildSeed } from "@/lib/seed"
+import { supabaseStoreEnabled } from "@/lib/supabase/mode"
 import type { Store } from "@/lib/types"
 
 let chain: Promise<unknown> = Promise.resolve()
 let depth = 0
+let memoryStore: Store | null = null
 
 function dataFile() {
-  return process.env.CRAZY_FANS_DATA || path.join(process.cwd(), "data", "store.json")
+  return process.env.CRAZY_FANS_DATA || path.join(runtimeDataDir(), "store.json")
+}
+
+function unwritable(error: unknown) {
+  const code = (error as NodeJS.ErrnoException).code
+  return code === "ENOENT" || code === "EACCES" || code === "EROFS" || code === "EPERM"
 }
 
 function enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -27,7 +35,18 @@ async function atomicWrite(store: Store) {
   await rename(/*turbopackIgnore: true*/ tmp, file)
 }
 
+async function persistOrRemember(store: Store) {
+  try {
+    await atomicWrite(store)
+    memoryStore = null
+  } catch (error) {
+    if (!unwritable(error)) throw error
+    memoryStore = store
+  }
+}
+
 async function readOrSeed(): Promise<Store> {
+  if (memoryStore) return memoryStore
   const file = dataFile()
   try {
     const raw = await readFile(/*turbopackIgnore: true*/ file, "utf8")
@@ -44,23 +63,25 @@ async function readOrSeed(): Promise<Store> {
       throw error
     }
     const store = buildSeed()
-    await atomicWrite(store)
+    await persistOrRemember(store)
     return store
   }
 }
 
 export function view<T>(fn: (store: Store) => T): Promise<T> {
+  if (supabaseStoreEnabled()) return import("@/lib/supabase/remote").then((remote) => remote.remoteView(fn))
   return enqueue(async () => fn(await readOrSeed()))
 }
 
 export function update<T>(fn: (store: Store) => T): Promise<T> {
+  if (supabaseStoreEnabled()) return import("@/lib/supabase/remote").then((remote) => remote.remoteUpdate(fn))
   return enqueue(async () => {
     if (depth > 0) throw new Error("Nested store update")
     depth += 1
     try {
       const store = await readOrSeed()
       const result = fn(store)
-      await atomicWrite(store)
+      await persistOrRemember(store)
       return result
     } finally {
       depth -= 1

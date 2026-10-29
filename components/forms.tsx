@@ -81,9 +81,10 @@ export function ForgotForm() {
         <input id="email" name="email" type="email" autoComplete="email" required className={inputClass} />
       </div>
       <button className={buttonClass} disabled={pending}>{pending ? "Sending…" : "Request reset"}</button>
+      {state.error ? <p role="alert" className={errorClass}>{state.error}</p> : null}
       {state.ok ? (
         <p role="status" className="text-sm leading-6 text-muted">
-          If an account exists for that email, a reset link will be sent once email delivery is connected. This beta does not send email yet.
+          If an account exists for that email, a reset link is on its way.
         </p>
       ) : null}
     </form>

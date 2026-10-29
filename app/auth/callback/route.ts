@@ -1,10 +1,6 @@
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
-import { SESSION_COOKIE, SESSION_DAYS } from "@/lib/constants"
-import { signInWithGoogle } from "@/lib/mutate"
-import { getAuthSecret } from "@/lib/secret"
-import { signSession } from "@/lib/session"
 import { safeNext } from "@/lib/text"
 
 export async function GET(request: Request) {
@@ -38,21 +34,18 @@ export async function GET(request: Request) {
   if (error) return NextResponse.redirect(failure)
 
   const { data } = await supabase.auth.getUser()
-  const email = data.user?.email
-  if (!email) return NextResponse.redirect(failure)
+  if (!data.user) return NextResponse.redirect(failure)
 
-  const metadata = data.user?.user_metadata ?? {}
-  const displayName = String(metadata.full_name || metadata.name || "")
-  const result = await signInWithGoogle({ email, displayName, now: Date.now() })
-  if (!result.ok || !result.userId) return NextResponse.redirect(failure)
-
-  const secret = await getAuthSecret()
-  success.cookies.set(SESSION_COOKIE, signSession(result.userId, secret), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: SESSION_DAYS * 24 * 60 * 60,
-  })
+  const meta = data.user.user_metadata ?? {}
+  const requested = String(meta.username ?? "").toLowerCase()
+  const username = /^[a-z0-9_]{3,20}$/.test(requested) ? requested : `fan_${data.user.id.replace(/-/g, "").slice(0, 8)}`
+  const rawName = String(meta.display_name || meta.full_name || meta.name || "Fan").replace(/\s+/g, " ").trim().slice(0, 40)
+  const displayName = rawName.length >= 2 ? rawName : "Fan"
+  const existing = await supabase.from("profiles").select("id").eq("id", data.user.id).maybeSingle()
+  if (!existing.data) {
+    const inserted = await supabase.from("profiles").insert({ id: data.user.id, username, display_name: displayName })
+    if (inserted.error && inserted.error.code !== "23505") return NextResponse.redirect(failure)
+  }
+  await supabase.rpc("track_events", { event_types: ["login", "active"] })
   return success
 }

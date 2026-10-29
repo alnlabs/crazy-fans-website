@@ -5,24 +5,6 @@
 
 create extension if not exists pgcrypto;
 
-create or replace function public.is_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.profiles
-    where id = auth.uid()
-      and role = 'admin'
-      and status = 'active'
-  );
-$$;
-
-revoke all on function public.is_admin() from public, anon, authenticated;
-
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   username text not null unique check (username ~ '^[a-z0-9_]{3,20}$'),
@@ -165,6 +147,24 @@ create index votes_battle_idx on public.votes (battle_id);
 create index reports_status_idx on public.reports (status, created_at desc);
 create index notifications_user_idx on public.notifications (user_id, read);
 
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and role = 'admin'
+      and status = 'active'
+  );
+$$;
+
+revoke all on function public.is_admin() from public, anon, authenticated;
+
 create or replace function public.protect_profile()
 returns trigger
 language plpgsql
@@ -201,17 +201,27 @@ set search_path = public
 as $$
 declare
   desired text;
+  display text;
 begin
   desired := lower(coalesce(new.raw_user_meta_data->>'username', ''));
-  if desired !~ '^[a-z0-9_]{3,20}$' then
+  if desired !~ '^[a-z0-9_]{3,20}$' or desired in ('admin', 'administrator', 'moderator', 'support', 'crazyfans', 'null', 'undefined', 'system') then
     desired := 'fan_' || substr(replace(new.id::text, '-', ''), 1, 8);
   end if;
+  while exists (select 1 from public.profiles where username = desired) loop
+    desired := 'fan_' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 8);
+  end loop;
+  display := left(btrim(coalesce(
+    nullif(new.raw_user_meta_data->>'display_name', ''),
+    nullif(new.raw_user_meta_data->>'full_name', ''),
+    nullif(new.raw_user_meta_data->>'name', ''),
+    'Fan'
+  )), 40);
+  if char_length(display) < 2 then
+    display := 'Fan';
+  end if;
   insert into public.profiles (id, username, display_name)
-  values (
-    new.id,
-    desired,
-    coalesce(nullif(new.raw_user_meta_data->>'display_name', ''), 'Fan')
-  );
+  values (new.id, desired, display);
+  insert into public.analytics_events (user_id, type) values (new.id, 'signup');
   return new;
 end;
 $$;
@@ -267,6 +277,10 @@ alter table public.analytics_events force row level security;
 create policy profiles_select on public.profiles
 for select to anon, authenticated
 using (true);
+
+create policy profiles_insert_own on public.profiles
+for insert to authenticated
+with check (id = auth.uid());
 
 create policy profiles_update_own on public.profiles
 for update to authenticated
@@ -413,6 +427,10 @@ for all to authenticated
 using (public.is_admin())
 with check (public.is_admin() and moderator_id = auth.uid());
 
+create policy notifications_insert on public.notifications
+for insert to authenticated
+with check (actor_id = auth.uid());
+
 create policy notifications_select on public.notifications
 for select to authenticated
 using (user_id = auth.uid());
@@ -438,7 +456,85 @@ create policy analytics_admin_select on public.analytics_events
 for select to authenticated
 using (public.is_admin());
 
--- Members cannot insert analytics rows. Add security-definer triggers for
--- trustworthy events before this table is exposed to the client.
--- Rate limits in this beta are enforced by the Next.js server actions.
--- Repeat that enforcement in the database or an edge function before public launch.
+-- Members cannot insert analytics rows directly. track_events records the
+-- signed-in member. Signup is recorded by handle_new_user.
+
+create or replace function public.track_events(event_types text[])
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  event_type text;
+begin
+  if auth.uid() is null then
+    return;
+  end if;
+  foreach event_type in array event_types loop
+    if event_type in ('login', 'active', 'vote', 'comment', 'discussion', 'battle', 'reaction', 'report') then
+      insert into public.analytics_events (user_id, type) values (auth.uid(), event_type);
+    end if;
+  end loop;
+end;
+$$;
+
+revoke all on function public.track_events(text[]) from public, anon;
+grant execute on function public.track_events(text[]) to authenticated;
+
+create table public.rate_buckets (
+  key text primary key,
+  hits jsonb not null default '[]'::jsonb
+);
+
+alter table public.rate_buckets enable row level security;
+alter table public.rate_buckets force row level security;
+
+create or replace function public.load_rate_buckets()
+returns table (key text, hits jsonb)
+language sql
+security definer
+set search_path = public
+as $$
+  select rate_buckets.key, rate_buckets.hits from public.rate_buckets;
+$$;
+
+create or replace function public.save_rate_buckets(buckets jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  item jsonb;
+begin
+  if auth.uid() is null or buckets is null then
+    return;
+  end if;
+  for item in select value from jsonb_array_elements(buckets) loop
+    insert into public.rate_buckets (key, hits)
+    values (item->>'key', coalesce(item->'hits', '[]'::jsonb))
+    on conflict (key) do update set hits = excluded.hits;
+  end loop;
+end;
+$$;
+
+revoke all on function public.load_rate_buckets() from public, anon;
+revoke all on function public.save_rate_buckets(jsonb) from public, anon;
+grant execute on function public.load_rate_buckets() to authenticated;
+grant execute on function public.save_rate_buckets(jsonb) to authenticated;
+
+create or replace function public.admin_profile_emails()
+returns table (id uuid, email text)
+language sql
+security definer
+set search_path = public, auth
+as $$
+  select profiles.id, users.email::text
+  from public.profiles
+  join auth.users on users.id = profiles.id
+  where public.is_admin();
+$$;
+
+revoke all on function public.admin_profile_emails() from public, anon;
+grant execute on function public.admin_profile_emails() to authenticated;

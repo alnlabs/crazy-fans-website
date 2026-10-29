@@ -9,7 +9,7 @@ export const createClient = async (request: NextRequest) => {
     request,
   })
 
-  if (!supabaseUrl || !supabaseKey) return supabaseResponse
+  if (!supabaseUrl || !supabaseKey) return { response: supabaseResponse, userId: null }
 
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
@@ -27,7 +27,6 @@ export const createClient = async (request: NextRequest) => {
   })
 
   // Refreshes the auth cookies. Do not add logic between creating the client and this call.
-  await supabase.auth.getUser()
-
-  return supabaseResponse
+  const { data } = await supabase.auth.getUser()
+  return { response: supabaseResponse, userId: data.user?.id ?? null }
 }

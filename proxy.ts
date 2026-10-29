@@ -5,7 +5,7 @@ import { readSession } from "@/lib/session"
 import { createClient } from "@/utils/supabase/middleware"
 
 export async function proxy(request: NextRequest) {
-  const response = await createClient(request)
+  const { response, userId: supabaseUserId } = await createClient(request)
 
   const path = request.nextUrl.pathname
   const needsSession =
@@ -18,8 +18,10 @@ export async function proxy(request: NextRequest) {
 
   if (!needsSession) return response
 
-  const secret = await getAuthSecret()
-  const userId = readSession(request.cookies.get(SESSION_COOKIE)?.value, secret)
+  const supabaseOn = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)
+  const userId = supabaseOn
+    ? supabaseUserId
+    : readSession(request.cookies.get(SESSION_COOKIE)?.value, await getAuthSecret())
   if (userId) return response
 
   const redirectUrl = request.nextUrl.clone()
